@@ -50,6 +50,10 @@ class Cylinders(object):
         return (vertices, faces)
 
     def add(self, radius, px, py):
+        # don't draw zero diameter cylinders, they will screw up bounding box
+        if not radius:
+            return
+
         vertices, faces = self.model
         vertices = (vertices * radius) + (px, py, 1)
         
@@ -71,33 +75,41 @@ class Cylinders(object):
         self.v_off += self.v_len
         self.f_off += self.f_len
 
+    def rotated(self, angle):
+        # https://en.wikipedia.org/wiki/Rotation_matrix
+        theta = np.radians(angle)
+        c, s = np.cos(theta), np.sin(theta)
+
+        R = np.array(((c,-s, 0), (s, c, 0), (0, 0, 1)))
+
+        return self.vertices.dot(R)
 
 class Halftone(object):
 
     def __init__(self):
         pass
 
-    def load(self, filename, scale=1):
+    def load(self, filename, scale=1, height=0.5):
         print("loading...")
 
         img = imageio.imread('img.gif')
         img = np.dot(img[...,:3], [0.2989, 0.5870, 0.1140])
-        img = 1-(img/255)
-        img = rotate(img, 45, resize=True, cval=0, mode='constant')
         img = resize(img, (img.shape[0] // scale, img.shape[1] // scale),
                                anti_aliasing=True)
+        shape = np.array(np.shape(img))
+        img = 1-(img/255)
 
+        # we rotate to give a 45 degree mask
+        img = rotate(img, 45, resize=True, cval=0, mode='constant')
 
         w, h = np.shape(img)
-        c = Cylinders(w*h, height=.3, sides=10)
+        c = Cylinders(w*h, height=height, sides=10)
         for y in range(h):
             for x in range(w):
-                if x == 0:
-                    print(img[x, y], end=" ")
-                   
                 c.add(img[x,y]*.75, y, w-x)
 
-        self.vertices = c.vertices
+        # rotate back so it doesn't look weird
+        self.vertices = c.rotated(45)
         self.faces = c.faces
 
     def _mesh(self):
@@ -107,7 +119,8 @@ class Halftone(object):
             for j in range(3):
                 msh.vectors[i][j] = self.vertices[f[j],:]
 
-        #msh.rotate(axis=(0, 0, 0.5), theta=radians(45))
+        # this might would work instead of Cylinders.rotated()
+        # msh.rotate(axis=(0, 0, 0.5), theta=radians(45))
 
         if not (msh.is_closed() or msh.check()):
             print("There is a problem with the mesh")
@@ -119,8 +132,8 @@ class Halftone(object):
         print("saving...")
         self._mesh().save(filename)
 
-    def plot(self):
-        print("ploting...")
+    def show(self):
+        print("plotting...")
         msh = self._mesh()
 
         # Create a new plot
@@ -139,6 +152,6 @@ class Halftone(object):
 
 
 h = Halftone()
-h.load("img.gif", scale=4)
+h.load("img.gif", scale=2)
 h.save("mesh.stl")
-#h.plot()
+#h.show()
