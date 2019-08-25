@@ -10,15 +10,58 @@ from matplotlib import pyplot
 
 from math import radians
 
+from abc import ABC, abstractmethod
 
-class Cylinders(object):
 
-    def __init__(self, pixels, height=1, sides=10):
+class Objects(ABC):
+
+    def __init__(self, instances, height=1, sides=10):
         self.v_off = 0
-        self.pixels = pixels
+        self.instances = instances
         self.height = height
         self.sides = sides
         self.model = self._model()
+
+    @abstractmethod
+    def _model(self):
+        pass
+
+    def add(self, radius, px, py):
+        # don't draw zero diameter cylinders, they will screw up bounding box
+        if not radius:
+            return
+
+        vertices, faces = self.model
+        vertices = (vertices * radius) + (px, py, 1)
+        
+        # -- initalize superset first time around
+        if not self.v_off:
+            # this is way faster than rebuilding the array each time by
+            # appending each new cylinder as it comes in
+            self.v_off = 0
+            self.f_off = 0
+            self.v_len = len(vertices)
+            self.f_len = len(faces)
+            self.vertices = np.empty((self.instances*self.v_len, 3))
+            self.faces = np.empty((self.instances*self.f_len, 3), dtype=np.int)
+
+        # -- add these to superset, faces need to have their indexes bumped
+        self.vertices[self.v_off:self.v_off+self.v_len] = vertices
+        self.faces[self.f_off:self.f_off+self.f_len] = self.v_off+faces
+
+        self.v_off += self.v_len
+        self.f_off += self.f_len
+
+    def rotated(self, angle):
+        # https://en.wikipedia.org/wiki/Rotation_matrix
+        theta = np.radians(angle)
+        c, s = np.cos(theta), np.sin(theta)
+
+        R = np.array(((c,-s, 0), (s, c, 0), (0, 0, 1)))
+
+        return self.vertices.dot(R)
+
+class Cylinders(Objects):
 
     def _model(self):
         c = np.linspace(0, 2*np.pi, self.sides)
@@ -49,68 +92,37 @@ class Cylinders(object):
 
         return (vertices, faces)
 
-    def add(self, radius, px, py):
-        # don't draw zero diameter cylinders, they will screw up bounding box
-        if not radius:
-            return
+class Cuboids(Objects):
 
-        vertices, faces = self.model
-        vertices = (vertices * radius) + (px, py, 1)
-        
-        # -- initalize superset first time around
-        if not self.v_off:
-            # this is way faster than rebuilding the array each time by
-            # appending each new cylinder as it comes in
-            self.v_off = 0
-            self.f_off = 0
-            self.v_len = len(vertices)
-            self.f_len = len(faces)
-            self.vertices = np.empty((self.pixels*self.v_len, 3))
-            self.faces = np.empty((self.pixels*self.f_len, 3), dtype=np.int)
+    def _model(self):
+        # 12 triangles, 6 faces, 8 vertices
+        vertices = np.array((
+            (-1, -1, 0),
+            (-1,  1, 0),
+            ( 1,  1, 0),
+            ( 1, -1, 0),
+            (-1, -1, self.height),
+            (-1,  1, self.height),
+            ( 1,  1, self.height),
+            ( 1, -1, self.height),
+            ))
 
-        # -- add these to superset, faces need to have their indexes bumped
-        self.vertices[self.v_off:self.v_off+self.v_len] = vertices
-        self.faces[self.f_off:self.f_off+self.f_len] = self.v_off+faces
+        faces = np.array((
+            (0, 1, 4), (4, 1, 5),
+            (1, 2, 5), (5, 6, 2),
+            (2, 3, 6), (6, 3, 7),
+            (3, 0, 7), (7, 0, 4),
+            (7, 4, 6), (4, 5, 6),
+            (2, 0, 3), (2, 1, 0),
+            ))
 
-        self.v_off += self.v_len
-        self.f_off += self.f_len
+        return (vertices, faces)
 
-    def rotated(self, angle):
-        # https://en.wikipedia.org/wiki/Rotation_matrix
-        theta = np.radians(angle)
-        c, s = np.cos(theta), np.sin(theta)
 
-        R = np.array(((c,-s, 0), (s, c, 0), (0, 0, 1)))
-
-        return self.vertices.dot(R)
-
-class Halftone(object):
+class Stl(ABC):
 
     def __init__(self):
         pass
-
-    def load(self, filename, scale=1, height=0.5):
-        print("loading...")
-
-        img = imageio.imread('img.gif')
-        img = np.dot(img[...,:3], [0.2989, 0.5870, 0.1140])
-        img = resize(img, (img.shape[0] // scale, img.shape[1] // scale),
-                               anti_aliasing=True)
-        shape = np.array(np.shape(img))
-        img = 1-(img/255)
-
-        # we rotate to give a 45 degree mask
-        img = rotate(img, 45, resize=True, cval=0, mode='constant')
-
-        w, h = np.shape(img)
-        c = Cylinders(w*h, height=height, sides=10)
-        for y in range(h):
-            for x in range(w):
-                c.add(img[x,y]*.75, y, w-x)
-
-        # rotate back so it doesn't look weird
-        self.vertices = c.rotated(45)
-        self.faces = c.faces
 
     def _mesh(self):
         # Create the mesh
@@ -150,8 +162,61 @@ class Halftone(object):
         # Show the plot to the screen
         pyplot.show()
 
+    def bounds(self):
+        msh = self._mesh()
+
+        origin = msh.min_
+        extent = msh.max_ - msh.min_
+
+        return (origin, extent)
+
+
+class Halftone(Stl):
+
+    def load(self, filename, scale=1, height=0.5):
+        print("loading...")
+
+        img = imageio.imread('img.gif')
+        img = np.dot(img[...,:3], [0.2989, 0.5870, 0.1140])
+        img = resize(img, (img.shape[0] // scale, img.shape[1] // scale),
+                               anti_aliasing=True)
+        shape = np.array(np.shape(img))
+        img = 1-(img/255)
+
+        # we rotate to give a 45 degree mask
+        img = rotate(img, 45, resize=True, cval=0, mode='constant')
+
+        w, h = np.shape(img)
+        c = Cylinders(w*h, height=height, sides=10)
+        for y in range(h):
+            for x in range(w):
+                c.add(img[x,y]*.75, y, w-x)
+
+        # rotate back so it doesn't look weird
+        self.vertices = c.rotated(45)
+        self.faces = c.faces
+
+
+class Substrate(Stl):
+
+    def build(self, shape, height=0.5):
+        print("rendering...")
+
+        c = Cuboids(1, height)
+
+        c.add(max(shape), 0, 0)
+
+        self.vertices = c.vertices
+        self.faces = c.faces
+
 
 h = Halftone()
 h.load("img.gif", scale=2)
-h.save("mesh.stl")
+h.save("mesh-mask.stl")
+
+s = Substrate()
+
+origin, extent = h.bounds()
+s.build((extent[0], extent[1]))
+s.save("mesh-subs.stl")
 #h.show()
