@@ -11,10 +11,11 @@ As with everything in 3D printing, your mileage will vary. There are
 a number of tunable parameters, most common if which might be `density`
 (which defines how much plastic is extruded for a given shade of
 gray), and `scale` (which defines how many pixels in the original
-image are averaged to determine one halftone dot).
+image are averaged to determine one halftone dot). Run with `--help`
+for more details.
 
-You may need to to tune, and there are almost certainly things thatr
- I hadn't considered!
+You may need to to tune, and there are almost certainly things that
+I haven't considered!
 
 
 ```
