@@ -26,18 +26,19 @@ class Objects(ABC):
     def _model(self):
         pass
 
-    def add(self, radius, px, py):
-        # don't draw zero diameter cylinders, they will screw up bounding box
+    def add(self, radius, px, py, pz):
+        # don't draw zero diameter objects, they will screw up bounding box
         if not radius:
             return
 
         vertices, faces = self.model
-        vertices = (vertices * radius) + (px, py, 1)
+        vertices = (vertices * (radius, radius, 1)) + (px, py, pz)
         
         # -- initalize superset first time around
         if not self.v_off:
             # this is way faster than rebuilding the array each time by
-            # appending each new cylinder as it comes in
+            # appending each new cylinder as it comes in... downside is
+            # that we lose flexibility in # sides etc.
             self.v_off = 0
             self.f_off = 0
             self.v_len = len(vertices)
@@ -98,13 +99,13 @@ class Cuboids(Objects):
         # 12 triangles, 6 faces, 8 vertices
         vertices = np.array((
             (-1, -1, 0),
-            (-1,  1, 0),
-            ( 1,  1, 0),
             ( 1, -1, 0),
+            ( 1,  1, 0),
+            (-1,  1, 0),
             (-1, -1, self.height),
-            (-1,  1, self.height),
-            ( 1,  1, self.height),
             ( 1, -1, self.height),
+            ( 1,  1, self.height),
+            (-1,  1, self.height),
             ))
 
         faces = np.array((
@@ -121,8 +122,11 @@ class Cuboids(Objects):
 
 class Stl(ABC):
 
-    def __init__(self):
-        pass
+    def __init__(self, height=1, ox=0, oy=0, oz=0):
+        self.height=height
+        self.ox=ox
+        self.oy=oy
+        self.oz=oz
 
     def _mesh(self):
         # Create the mesh
@@ -162,6 +166,9 @@ class Stl(ABC):
         # Show the plot to the screen
         pyplot.show()
 
+    def translate(self, x=0, y=0, z=0):
+        self.vertices += (x, y, z)
+
     def bounds(self):
         msh = self._mesh()
 
@@ -170,13 +177,26 @@ class Stl(ABC):
 
         return (origin, extent)
 
+    def orient(self, x=0, y=0, z=0):
+        # set axis flag to 1 in order to activate
+        # orient (x,y,z) around the origin
+        # for each, subtract offset and half of extent
+
+        origin, extent = self.bounds()
+
+        self.translate(
+            -(origin[0]+extent[0]/2)*x,
+            -(origin[1]+extent[1]/2)*y,
+            -(origin[2]+extent[2]/2)*z,
+            )
+
 
 class Halftone(Stl):
 
-    def load(self, filename, scale=1, height=0.5):
+    def load(self, filename, scale=1):
         print("loading...")
 
-        img = imageio.imread('img.gif')
+        img = imageio.imread(filename)
         img = np.dot(img[...,:3], [0.2989, 0.5870, 0.1140])
         img = resize(img, (img.shape[0] // scale, img.shape[1] // scale),
                                anti_aliasing=True)
@@ -187,10 +207,10 @@ class Halftone(Stl):
         img = rotate(img, 45, resize=True, cval=0, mode='constant')
 
         w, h = np.shape(img)
-        c = Cylinders(w*h, height=height, sides=10)
+        c = Cylinders(w*h, height=self.height, sides=10)
         for y in range(h):
             for x in range(w):
-                c.add(img[x,y]*.75, y, w-x)
+                c.add(img[x,y]*.75, self.oy+y, self.ox+w-x, self.oz)
 
         # rotate back so it doesn't look weird
         self.vertices = c.rotated(45)
@@ -199,24 +219,45 @@ class Halftone(Stl):
 
 class Substrate(Stl):
 
-    def build(self, shape, height=0.5):
+    def build(self, shape):
         print("rendering...")
 
-        c = Cuboids(1, height)
+        c = Cuboids(1, self.height)
 
-        c.add(max(shape), 0, 0)
+        c.add(max(shape), self.ox, self.oy, self.oz)
 
         self.vertices = c.vertices
         self.faces = c.faces
 
 
-h = Halftone()
-h.load("img.gif", scale=2)
+def main(
+    substrate_height = 1,
+    halftone_height = .2
+    ):
+ 
+    pass
+
+
+h = Halftone(height=halftone_height)
+h.load("lena.jpg", scale=4)
+h.orient(x=1, y=1, z=1)
+h.translate(z=substrate_height+halftone_height/2)
 h.save("mesh-mask.stl")
 
-s = Substrate()
+s = Substrate(height=substrate_height)
 
 origin, extent = h.bounds()
-s.build((extent[0], extent[1]))
+#import pdb;pdb.set_trace()
+
+s.build((extent[0]/2, extent[1]/2))
+
+s.orient(x=1, y=1, z=1)
+s.translate(z=substrate_height/2)
 s.save("mesh-subs.stl")
+
+print(h.bounds())
+print(s.bounds())
+print(s.bounds())
+
+
 #h.show()
