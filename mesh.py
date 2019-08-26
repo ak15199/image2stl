@@ -209,7 +209,8 @@ class Halftone(Stl):
         img = imageio.imread(filename)
         img = np.dot(img[..., :3], [0.2989, 0.5870, 0.1140])
         img = resize(img, (img.shape[0] // scale, img.shape[1] // scale),
-                     anti_aliasing=True, mode='constant')
+                     anti_aliasing=True,
+                     mode='constant')
         shape = np.array(np.shape(img))
         img = 1 - (img / 255)
 
