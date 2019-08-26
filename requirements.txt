@@ -1,0 +1,6 @@
+Click==7.0
+imageio==2.5.0
+matplotlib==2.2.3
+numpy==1.15.4
+numpy-stl==2.10.1
+scikit-image==0.14.0
