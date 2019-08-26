@@ -1,4 +1,6 @@
+import click
 import numpy as np
+import os
 from stl import mesh
 
 import imageio
@@ -230,34 +232,34 @@ class Substrate(Stl):
         self.faces = c.faces
 
 
-def main(
-    substrate_height = 1,
-    halftone_height = .2
-    ):
+@click.command()
+@click.argument('filename', type=click.Path(exists=True))
+@click.option('--substrate-height', default=1.0, help='Height of substrate')
+@click.option('--halftone-height', default=0.2, help='Height of halftone')
+@click.option('--scale', default=4, help='Scale-down factor')
+@click.option('--show/--no-show', default=False, is_flag=True, help='Display halftone in pyplot instead of printing')
+def main(filename, substrate_height, halftone_height, scale, show):
  
-    pass
+    target = os.path.splitext(filename)[0]
 
+    halftone = Halftone(height=halftone_height)
+    halftone.load(filename, scale=scale)
+    halftone.orient(x=1, y=1, z=1)
+    halftone.translate(z=substrate_height+halftone_height/2)
+    if show:
+        halftone.show()
+        exit(0)
+    else:
+        halftone.save(f"{target}-mask.stl")
 
-h = Halftone(height=halftone_height)
-h.load("lena.jpg", scale=4)
-h.orient(x=1, y=1, z=1)
-h.translate(z=substrate_height+halftone_height/2)
-h.save("mesh-mask.stl")
+    substrate = Substrate(height=substrate_height)
 
-s = Substrate(height=substrate_height)
+    origin, extent = halftone.bounds()
 
-origin, extent = h.bounds()
-#import pdb;pdb.set_trace()
+    substrate.build((extent[0]/2, extent[1]/2))
+    substrate.orient(x=1, y=1, z=1)
+    substrate.translate(z=substrate_height/2)
+    substrate.save(f"{target}-subs.stl")
 
-s.build((extent[0]/2, extent[1]/2))
-
-s.orient(x=1, y=1, z=1)
-s.translate(z=substrate_height/2)
-s.save("mesh-subs.stl")
-
-print(h.bounds())
-print(s.bounds())
-print(s.bounds())
-
-
-#h.show()
+if __name__ == "__main__":
+    main()
