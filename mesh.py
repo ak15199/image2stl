@@ -202,7 +202,7 @@ class Stl(ABC):
 
 
 class Halftone(Stl):
-    def load(self, filename, scale=1):
+    def load(self, filename, scale, density, sides):
         name = os.path.basename(filename)
         click.echo(f"loading '{name}'...")
 
@@ -219,10 +219,10 @@ class Halftone(Stl):
 
         click.echo("building halftone...")
         w, h = np.shape(img)
-        c = Cylinders(w * h, height=self.height, sides=10)
+        c = Cylinders(w * h, height=self.height, sides=sides+1)
         for y in range(h):
             for x in range(w):
-                c.add(img[x, y] * .75, self.oy + y, self.ox + w - x, self.oz)
+                c.add(img[x, y] * density, self.oy + y, self.ox + w - x, self.oz)
 
         # rotate back so it doesn't look weird
         self.vertices = c.rotated(45)
@@ -245,17 +245,19 @@ class Substrate(Stl):
 @click.argument('filename', type=click.Path(exists=True))
 @click.option('--substrate-height', default=1.0, help='Height of substrate')
 @click.option('--halftone-height', default=0.2, help='Height of halftone')
-@click.option('--scale', default=4, help='Scale-down factor')
+@click.option('--density', default=7.0, help='Extrusion density (contrast)')
+@click.option('--scale', default=4, help='Scale-down factor for image')
+@click.option('--sides', default=8, help='Number of sides on a halftone cylinder')
 @click.option('--show/--no-show',
               default=False,
               is_flag=True,
               help='Display halftone in pyplot instead of printing')
-def main(filename, substrate_height, halftone_height, scale, show):
+def main(filename, substrate_height, halftone_height, density, scale, sides, show):
 
     target = os.path.splitext(filename)[0]
 
     halftone = Halftone(height=halftone_height)
-    halftone.load(filename, scale=scale)
+    halftone.load(filename, scale=scale, density=density, sides=sides)
     halftone.orient(x=1, y=1, z=1)
     halftone.translate(z=substrate_height + halftone_height / 2)
     if show:
