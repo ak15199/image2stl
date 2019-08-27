@@ -16,20 +16,26 @@ from abc import ABC, abstractmethod
 
 
 class Objects(ABC):
-    def __init__(self, instances, height=1, sides=10):
+    def __init__(self, instances, min_radius, height=1, sides=10):
         self.v_off = 0
         self.instances = instances
         self.height = height
         self.sides = sides
         self.model = self._model()
+        self.min_radius = min_radius
+        print(f"init height={height}")
 
     @abstractmethod
     def _model(self):
         pass
 
+    def loaded(self):
+        return hasattr(self, "vertices")
+
     def add(self, radius, px, py, pz):
         # don't draw zero diameter objects, they will screw up bounding box
-        if not radius:
+        # also really small diameters may clog up the extruder. bad.
+        if not radius or radius<self.min_radius:
             return
 
         vertices, faces = self.model
@@ -111,6 +117,7 @@ class Cuboids(Objects):
             (1, 1, self.height),
             (-1, 1, self.height),
         ))
+        print(self.height)
 
         faces = np.array((
             (0, 1, 4),
@@ -131,8 +138,9 @@ class Cuboids(Objects):
 
 
 class Stl(ABC):
-    def __init__(self, height=1, ox=0, oy=0, oz=0):
+    def __init__(self, height=1, min_radius=0.1, ox=0, oy=0, oz=0):
         self.height = height
+        self.min_radius = min_radius
         self.ox = ox
         self.oy = oy
         self.oz = oz
@@ -187,9 +195,13 @@ class Stl(ABC):
 
         return (origin, extent)
 
+    def __str__(self):
+        origin, extent = self.bounds()
+        return f"[origin@({origin[0]:.3f}, {origin[1]:.3f}, {origin[2]:.3f}), extent@({extent[0]:.3f}, {extent[1]:.3f}, {extent[2]:.3f})"
+
     def orient(self, x=0, y=0, z=0):
         # set axis flag to 1 in order to activate
-        # orient (x,y,z) around the origin
+        # orient (x,y,z) center around the origin
         # for each, subtract offset and half of extent
 
         origin, extent = self.bounds()
@@ -219,10 +231,14 @@ class Halftone(Stl):
 
         click.echo("building halftone...")
         w, h = np.shape(img)
-        c = Cylinders(w * h, height=self.height, sides=sides+1)
+        c = Cylinders(w * h, height=self.height, sides=sides+1, min_radius=self.min_radius)
         for y in range(h):
             for x in range(w):
                 c.add(img[x, y] * density, self.oy + y, self.ox + w - x, self.oz)
+
+        if not c.loaded():
+            click.echo("No areas were found with those settings, please adjust", err=True)
+            exit(1)
 
         # rotate back so it doesn't look weird
         self.vertices = c.rotated(45)
@@ -233,12 +249,14 @@ class Substrate(Stl):
     def build(self, shape):
         click.echo("building substrate...")
 
-        c = Cuboids(1, self.height)
+        c = Cuboids(1, 0, height=self.height)
 
-        c.add(max(shape), self.ox, self.oy, self.oz)
+        c.add(1+max(shape)/2, 0, 0, 0)
 
         self.vertices = c.vertices
         self.faces = c.faces
+
+        print(self)
 
 
 @click.command()
@@ -246,17 +264,18 @@ class Substrate(Stl):
 @click.option('--substrate-height', default=1.0, help='Height of substrate')
 @click.option('--halftone-height', default=0.2, help='Height of halftone')
 @click.option('--density', default=7.0, help='Extrusion density (contrast)')
+@click.option('--min-radius', default=0.1, help='Lightest grayscale to render')
 @click.option('--scale', default=4, help='Scale-down factor for image')
 @click.option('--sides', default=8, help='Number of sides on a halftone cylinder')
 @click.option('--show/--no-show',
               default=False,
               is_flag=True,
               help='Display halftone in pyplot instead of printing')
-def main(filename, substrate_height, halftone_height, density, scale, sides, show):
+def main(filename, substrate_height, halftone_height, density, min_radius, scale, sides, show):
 
     target = os.path.splitext(filename)[0]
 
-    halftone = Halftone(height=halftone_height)
+    halftone = Halftone(height=halftone_height, min_radius=min_radius)
     halftone.load(filename, scale=scale, density=density, sides=sides)
     halftone.orient(x=1, y=1, z=1)
     halftone.translate(z=substrate_height + halftone_height / 2)
@@ -266,14 +285,18 @@ def main(filename, substrate_height, halftone_height, density, scale, sides, sho
     else:
         halftone.save(f"{target}-mask.stl")
 
+    print(f" main: height {substrate_height}")
     substrate = Substrate(height=substrate_height)
 
     origin, extent = halftone.bounds()
 
-    substrate.build((extent[0] / 2, extent[1] / 2))
+    substrate.build((extent[0], extent[1]))
     substrate.orient(x=1, y=1, z=1)
     substrate.translate(z=substrate_height / 2)
     substrate.save(f"{target}-subs.stl")
+
+    click.echo(f"Halftone: {halftone}")
+    click.echo(f"Substrate: {substrate}")
 
 
 if __name__ == "__main__":
