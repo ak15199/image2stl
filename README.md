@@ -7,9 +7,9 @@ Printing at 0.15mm layer height, with black and white PLA worked
 really well, with the default parameters and no scaling in Cura, this
 printed three layers of substrate and one layer of halftone mask.
 
-![alt text](https://github.com/ak15199/image2stl.git/blob/media/lena-original.png)
-![alt text](https://github.com/ak15199/image2stl.git/blob/media/lena-preview.png)
-![alt text](https://github.com/ak15199/image2stl.git/blob/media/lena-printed.png)
+![alt text](https://github.com/ak15199/image2stl/blob/media/lena-original.png)
+![alt text](https://github.com/ak15199/image2stl/blob/media/lena-preview.png)
+![alt text](https://github.com/ak15199/image2stl/blob/media/lena-printed.png)
 
 Once you have your mask (the halftone), and substrate STLs, you'll
 need to load them into your slicer. For Cura, and assuming that
