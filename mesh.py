@@ -18,12 +18,13 @@ from abc import ABC, abstractmethod
 class Objects(ABC):
     def __init__(self, instances, min_radius, height=1, sides=10):
         self.v_off = 0
+        self.r_off = 0
         self.instances = instances
         self.height = height
         self.sides = sides
         self.model = self._model()
         self.min_radius = min_radius
-        print(f"init height={height}")
+        self.radii = np.zeros((instances))
 
     @abstractmethod
     def _model(self):
@@ -37,6 +38,9 @@ class Objects(ABC):
         # also really small diameters may clog up the extruder. bad.
         if not radius or radius<self.min_radius:
             return
+
+        self.radii[self.r_off] = radius
+        self.r_off += 1
 
         vertices, faces = self.model
         vertices = (vertices * (radius, radius, 1)) + (px, py, pz)
@@ -69,7 +73,15 @@ class Objects(ABC):
         R = np.array(((c, -s, 0), (s, c, 0), (0, 0, 1)))
 
         return self.vertices.dot(R)
+    
+    def report(self, bincount=10):
+        counts, edges = np.histogram(self.radii, bins=bincount, range=(0.001, 1))
+        peak = max(counts)
 
+        print(f"Total {self.r_off} cylinders in halftone")
+        for num, edge, count in zip(range(bincount), edges, counts):
+            n = "*"*int(20*count/peak)
+            print(f"  {num} {edge:1.2f} {n}")
 
 class Cylinders(Objects):
     def _model(self):
@@ -117,7 +129,6 @@ class Cuboids(Objects):
             (1, 1, self.height),
             (-1, 1, self.height),
         ))
-        print(self.height)
 
         faces = np.array((
             (0, 1, 4),
@@ -244,6 +255,8 @@ class Halftone(Stl):
         self.vertices = c.rotated(45)
         self.faces = c.faces
 
+        c.report()
+
 
 class Substrate(Stl):
     def build(self, shape):
@@ -256,14 +269,12 @@ class Substrate(Stl):
         self.vertices = c.vertices
         self.faces = c.faces
 
-        print(self)
-
 
 @click.command()
 @click.argument('filename', type=click.Path(exists=True))
 @click.option('--substrate-height', default=1.0, help='Height of substrate')
 @click.option('--halftone-height', default=0.2, help='Height of halftone')
-@click.option('--density', default=7.0, help='Extrusion density (contrast)')
+@click.option('--density', default=1.0, help='Extrusion density (contrast)')
 @click.option('--min-radius', default=0.1, help='Lightest grayscale to render')
 @click.option('--scale', default=4, help='Scale-down factor for image')
 @click.option('--sides', default=8, help='Number of sides on a halftone cylinder')
@@ -279,13 +290,13 @@ def main(filename, substrate_height, halftone_height, density, min_radius, scale
     halftone.load(filename, scale=scale, density=density, sides=sides)
     halftone.orient(x=1, y=1, z=1)
     halftone.translate(z=substrate_height + halftone_height / 2)
+
     if show:
         halftone.show()
         exit(0)
     else:
         halftone.save(f"{target}-mask.stl")
 
-    print(f" main: height {substrate_height}")
     substrate = Substrate(height=substrate_height)
 
     origin, extent = halftone.bounds()
@@ -295,8 +306,8 @@ def main(filename, substrate_height, halftone_height, density, min_radius, scale
     substrate.translate(z=substrate_height / 2)
     substrate.save(f"{target}-subs.stl")
 
-    click.echo(f"Halftone: {halftone}")
-    click.echo(f"Substrate: {substrate}")
+    click.echo(f" Halftone geometry: {halftone}")
+    click.echo(f"Substrate geometry: {substrate}")
 
 
 if __name__ == "__main__":
